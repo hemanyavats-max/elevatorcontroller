@@ -1,0 +1,1638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elevator Controller   VIT SENSE</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,600;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --amber: #FFB300;
+    --amber-dim: #C47E00;
+    --amber-glow: rgba(255,179,0,0.18);
+    --red: #FF3B30;
+    --green: #39FF14;
+    --bg: #0A0A08;
+    --panel: #111109;
+    --panel2: #16160E;
+    --steel: #2A2A22;
+    --steel2: #3A3A2E;
+    --cream: #F5F0E0;
+    --text-dim: #888870;
+    --mono: 'Share Tech Mono', monospace;
+    --display: 'Bebas Neue', cursive;
+    --body: 'DM Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { overflow: hidden; height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--cream);
+    font-family: var(--body);
+    height: 100vh;
+    overflow: hidden;
+    cursor: none;
+  }
+
+  /* Custom Scrollbar for Floors */
+  .floor::-webkit-scrollbar {
+    width: 4px;
+  }
+  .floor::-webkit-scrollbar-track {
+    background: var(--bg);
+  }
+  .floor::-webkit-scrollbar-thumb {
+    background: var(--steel2);
+    border-radius: 2px;
+  }
+  .floor::-webkit-scrollbar-thumb:hover {
+    background: var(--amber-dim);
+  }
+
+  /* CUSTOM CURSOR */
+  #cursor {
+    position: fixed;
+    width: 16px; height: 16px;
+    border: 2px solid var(--amber);
+    border-radius: 0;
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%);
+    transition: width .15s, height .15s, background .15s;
+    mix-blend-mode: difference;
+  }
+  #cursor.big {
+    width: 40px; height: 40px;
+    background: var(--amber-glow);
+  }
+
+  /* SCANLINES OVERLAY */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px);
+    pointer-events: none;
+    z-index: 8000;
+  }
+
+  /* FLOOR INDICATOR   fixed top-left */
+  #floor-indicator {
+    position: fixed;
+    top: 30px; left: 40px;
+    z-index: 1000;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .fi-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+  .fi-number {
+    font-family: var(--display);
+    font-size: 72px;
+    line-height: 1;
+    color: var(--amber);
+    text-shadow: 0 0 40px rgba(255,179,0,.6), 0 0 80px rgba(255,179,0,.3);
+    transition: all .4s ease;
+  }
+  .fi-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--amber-dim);
+    letter-spacing: 2px;
+    min-height: 16px;
+    transition: all .3s;
+  }
+
+  /* NAV BUTTONS   fixed right */
+  #nav-panel {
+    position: fixed;
+    right: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+  }
+  .nav-btn {
+    width: 44px; height: 44px;
+    border: 1.5px solid var(--steel2);
+    background: var(--panel);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: none;
+    transition: all .2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .nav-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--amber-glow);
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  .nav-btn:hover::before, .nav-btn.active::before { opacity: 1; }
+  .nav-btn:hover, .nav-btn.active {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+  .nav-btn .floor-num {
+    font-family: var(--display);
+    font-size: 18px;
+  }
+  .nav-btn .floor-tag {
+    position: absolute;
+    right: calc(100% + 10px);
+    font-size: 9px;
+    letter-spacing: 2px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity .2s;
+    color: var(--amber);
+  }
+  .nav-btn:hover .floor-tag { opacity: 1; }
+
+  /* PROGRESS BAR */
+  #progress-bar {
+    position: fixed;
+    bottom: 0; left: 0;
+    height: 3px;
+    background: var(--amber);
+    box-shadow: 0 0 10px var(--amber);
+    z-index: 1000;
+    transition: width .6s cubic-bezier(.4,0,.2,1);
+    width: 0%;
+  }
+
+  /* SCROLL CONTAINER */
+  #scroll-container {
+    display: flex;
+    height: 100vh;
+    width: max-content;
+    will-change: transform;
+    transition: transform .8s cubic-bezier(.77,0,.175,1);
+  }
+
+  /* SECTIONS   each is one "floor" */
+  .floor {
+    width: 100vw;
+    height: 100vh;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 120px;
+    position: relative;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+  }
+
+  /* FLOOR DECORATIVE LINES */
+  .floor::before {
+    content: attr(data-floor-label);
+    position: absolute;
+    bottom: 30px;
+    right: 120px;
+    font-family: var(--display);
+    font-size: 200px;
+    color: rgba(255,179,0,0.03);
+    line-height: 1;
+    user-select: none;
+  }
+
+  /* ─── FLOOR 0: LOBBY ─── */
+  #floor-0 {
+    background: var(--bg);
+    flex-direction: column;
+    align-items: flex-start;
+    padding-left: clamp(40px, 10vw, 160px);
+  }
+  .lobby-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--amber);
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .lobby-tag::before {
+    content: '';
+    display: block;
+    width: 40px; height: 1px;
+    background: var(--amber);
+  }
+  .lobby-title {
+    font-family: var(--display);
+    font-size: clamp(50px, 7vw, 100px);
+    line-height: .92;
+    letter-spacing: -1px;
+    max-width: 700px;
+    margin-bottom: 24px;
+  }
+  .lobby-title em {
+    color: var(--amber);
+    font-style: normal;
+  }
+  .lobby-desc {
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--text-dim);
+    max-width: 480px;
+    margin-bottom: 48px;
+    font-weight: 300;
+  }
+  .lobby-cta {
+    display: inline-flex; align-items: center; gap: 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--amber);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    cursor: none;
+    border: 1px solid var(--amber);
+    padding: 14px 28px;
+    transition: all .2s;
+    background: transparent;
+  }
+  .lobby-cta:hover {
+    background: var(--amber);
+    color: var(--bg);
+  }
+  .lobby-cta .arrow { font-size: 18px; transition: transform .2s; }
+  .lobby-cta:hover .arrow { transform: translateX(5px); }
+
+  /* elevator shaft illustration */
+  .shaft {
+    position: absolute;
+    right: 10vw;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 180px;
+  }
+  .shaft-rail {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, transparent, var(--steel2), transparent);
+  }
+  .shaft-rail.left { left: 20px; }
+  .shaft-rail.right { right: 20px; }
+  .shaft-car {
+    position: absolute;
+    left: 24px; right: 24px;
+    height: 100px;
+    background: var(--panel2);
+    border: 1px solid var(--steel2);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    animation: shaftMove 4s ease-in-out infinite;
+    box-shadow: 0 0 30px rgba(255,179,0,.1);
+  }
+  @keyframes shaftMove {
+    0%, 100% { top: 60%; }
+    50% { top: 20%; }
+  }
+  .shaft-door-l, .shaft-door-r {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 50%;
+    background: var(--panel);
+    border: 1px solid var(--steel2);
+    animation: doorOpen 4s ease-in-out infinite;
+  }
+  .shaft-door-l { left: 0; animation-name: doorOpenL; }
+  .shaft-door-r { right: 0; animation-name: doorOpenR; }
+  @keyframes doorOpenL {
+    0%,30%,70%,100% { transform: translateX(0); }
+    45%,60% { transform: translateX(-100%); }
+  }
+  @keyframes doorOpenR {
+    0%,30%,70%,100% { transform: translateX(0); }
+    45%,60% { transform: translateX(100%); }
+  }
+  .shaft-floor-indicator {
+    font-family: var(--display);
+    font-size: 28px;
+    color: var(--amber);
+    text-shadow: 0 0 20px var(--amber);
+    position: absolute;
+    top: 6px;
+    animation: floorCount 4s ease-in-out infinite;
+  }
+  @keyframes floorCount {
+    0%,30% { content: 'G'; }
+  }
+  .shaft-icon {
+    font-size: 28px;
+    opacity: .5;
+  }
+
+  /* team badges */
+  .team-row {
+    display: flex; gap: 16px; margin-top: 32px;
+  }
+  .team-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    border: 1px solid var(--steel2);
+    padding: 6px 12px;
+    letter-spacing: 2px;
+  }
+
+  /* ─── FLOOR 1: ABSTRACT ─── */
+  #floor-1 {
+    background: var(--panel);
+  }
+  .abstract-wrap {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: center;
+    max-width: 1000px;
+    margin: auto 0;
+  }
+  .section-eyebrow {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 5px;
+    color: var(--amber);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-eyebrow::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--steel2);
+  }
+  .section-title {
+    font-family: var(--display);
+    font-size: clamp(36px, 4.5vw, 64px);
+    line-height: 1;
+    margin-bottom: 20px;
+  }
+  .section-body {
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+  .keyword-pills {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-top: 24px;
+  }
+  .kpill {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 5px 12px;
+    border: 1px solid var(--amber-dim);
+    color: var(--amber);
+    background: var(--amber-glow);
+  }
+  /* FSM diagram */
+  .fsm-diagram {
+    position: relative;
+    width: 380px;
+    height: 340px;
+  }
+  .fsm-state {
+    position: absolute;
+    width: 90px; height: 90px;
+    border-radius: 50%;
+    border: 2px solid var(--amber);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--display);
+    font-size: 22px;
+    color: var(--amber);
+    background: var(--panel2);
+    box-shadow: 0 0 20px rgba(255,179,0,.2);
+    animation: pulse 3s ease-in-out infinite;
+  }
+  .fsm-state.IDLE { top: 50%; left: 50%; transform: translate(-50%,-50%); animation-delay: 0s; }
+  .fsm-state.UP { top: 20px; left: 50%; transform: translateX(-50%); animation-delay: 1s; }
+  .fsm-state.DOWN { bottom: 20px; left: 50%; transform: translateX(-50%); animation-delay: 2s; }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 20px rgba(255,179,0,.2); }
+    50% { box-shadow: 0 0 40px rgba(255,179,0,.5); }
+  }
+  .fsm-arrow {
+    position: absolute;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .fsm-line {
+    width: 2px;
+    background: var(--steel2);
+    position: absolute;
+  }
+  /* arrows via SVG */
+  .fsm-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    overflow: visible;
+  }
+
+  /* ─── FLOOR 2: ARCHITECTURE ─── */
+  #floor-2 {
+    background: var(--bg);
+  }
+  .arch-wrap {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: center;
+    max-width: 1100px;
+    margin: auto 0;
+  }
+  .port-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .port-table th {
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--amber);
+    border-bottom: 1px solid var(--steel2);
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .port-table td {
+    padding: 9px 12px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--steel);
+    vertical-align: top;
+  }
+  .port-table tr:hover td { background: var(--panel); color: var(--cream); }
+  .port-dir-in { color: #39FF14; }
+  .port-dir-out { color: #FF3B30; }
+  .port-name { color: var(--cream); }
+  .block-diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    position: relative;
+  }
+  .bd-block {
+    border: 1px solid var(--steel2);
+    background: var(--panel2);
+    padding: 14px 24px;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-align: center;
+    color: var(--cream);
+    width: 200px;
+    position: relative;
+    transition: all .2s;
+  }
+  .bd-block:hover {
+    border-color: var(--amber);
+    color: var(--amber);
+    box-shadow: 0 0 20px rgba(255,179,0,.2);
+  }
+  .bd-block .bd-label {
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+  .bd-connector {
+    width: 2px;
+    height: 30px;
+    background: var(--steel2);
+    position: relative;
+  }
+  .bd-connector::after {
+    content: '▼';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 8px;
+    color: var(--steel2);
+  }
+
+  /* ─── FLOOR 3: CODE ─── */
+  #floor-3 {
+    background: var(--panel);
+  }
+  .code-wrap {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: flex-start;
+    max-width: 1100px;
+    margin: auto 0;
+  }
+  .code-block {
+    background: #080806;
+    border: 1px solid var(--steel2);
+    border-top: 2px solid var(--amber);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.9;
+    padding: 24px;
+    overflow: hidden;
+    max-height: 420px;
+    position: relative;
+  }
+  .code-block::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 60px;
+    background: linear-gradient(to bottom, transparent, #080806);
+  }
+  .code-tab {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--amber);
+    padding: 6px 16px;
+    background: var(--amber-glow);
+    display: inline-block;
+    margin-bottom: 16px;
+  }
+  .c-keyword { color: #CC8BFF; }
+  .c-type { color: #56D3FF; }
+  .c-comment { color: #4A4A3A; font-style: italic; }
+  .c-string { color: #FFD080; }
+  .c-number { color: var(--green); }
+  .c-signal { color: var(--amber); }
+  .code-info {
+    display: flex; flex-direction: column; gap: 24px;
+  }
+  .info-card {
+    border-left: 2px solid var(--amber);
+    padding-left: 20px;
+  }
+  .info-card-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--amber);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .info-card-body {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.7;
+    font-weight: 300;
+  }
+
+  /* ─── FLOOR 4: RESULTS ─── */
+  #floor-4 {
+    background: var(--bg);
+  }
+  .results-wrap {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: center;
+    max-width: 1100px;
+    margin: auto 0;
+  }
+  .waveform-viz {
+    background: #050503;
+    border: 1px solid var(--steel2);
+    padding: 24px;
+    height: 300px;
+    position: relative;
+    overflow: hidden;
+  }
+  .wv-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .wv-label::after {
+    content: 'LIVE SIMULATION';
+    font-size: 8px;
+    color: var(--green);
+    border: 1px solid var(--green);
+    padding: 2px 6px;
+    animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .wave-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .wave-name {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    width: 80px;
+    flex-shrink: 0;
+  }
+  .wave-track {
+    flex: 1;
+    height: 20px;
+    position: relative;
+  }
+  canvas.wave-canvas {
+    width: 100%; height: 100%;
+    display: block;
+  }
+  .scenario-tabs {
+    display: flex; gap: 2px; margin-bottom: 24px;
+  }
+  .stab {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 2px;
+    padding: 6px 14px;
+    border: 1px solid var(--steel2);
+    cursor: none;
+    transition: all .2s;
+    color: var(--text-dim);
+    background: var(--panel);
+  }
+  .stab:hover, .stab.active {
+    border-color: var(--amber);
+    color: var(--amber);
+    background: var(--amber-glow);
+  }
+  .pass-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+    border: 1px solid var(--green);
+    padding: 6px 14px;
+    margin-top: 16px;
+    background: rgba(57,255,20,.05);
+  }
+  .pass-badge .dot {
+    width: 6px; height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: blink .8s steps(1) infinite;
+  }
+  .results-stats {
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .stat-row {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--steel);
+  }
+  .stat-num {
+    font-family: var(--display);
+    font-size: 56px;
+    color: var(--amber);
+    line-height: 1;
+    text-shadow: 0 0 30px rgba(255,179,0,.4);
+  }
+  .stat-label {
+    font-size: 13px;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+  .stat-label strong {
+    display: block;
+    color: var(--cream);
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  /* ─── FLOOR 5: TEAM ─── */
+  #floor-5 {
+    background: var(--panel);
+    flex-direction: column;
+    align-items: flex-start;
+    padding-left: clamp(40px, 10vw, 160px);
+    padding-right: clamp(40px, 10vw, 160px);
+  }
+  .team-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-top: 30px;
+    width: 100%;
+    max-width: 900px;
+  }
+  .team-card {
+    border: 1px solid var(--steel2);
+    background: var(--panel2);
+    padding: 28px 24px;
+    position: relative;
+    overflow: hidden;
+    transition: all .3s;
+  }
+  .team-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--amber);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .3s;
+  }
+  .team-card:hover::before { transform: scaleX(1); }
+  .team-card:hover { box-shadow: 0 10px 40px rgba(0,0,0,.4); }
+  .tc-reg {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 3px;
+    margin-bottom: 12px;
+  }
+  .tc-name {
+    font-family: var(--display);
+    font-size: 28px;
+    line-height: 1.1;
+    margin-bottom: 4px;
+  }
+  .tc-dept {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+  .tc-icon {
+    position: absolute;
+    bottom: 16px; right: 16px;
+    font-size: 36px;
+    opacity: .08;
+  }
+  .faculty-row {
+    display: flex; gap: 40px; margin-top: 40px;
+    width: 100%;
+    max-width: 900px;
+  }
+  .fac-card {
+    flex: 1;
+    border-left: 2px solid var(--amber);
+    padding-left: 20px;
+  }
+  .fac-role {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--amber);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .fac-name {
+    font-family: var(--display);
+    font-size: 22px;
+    margin-bottom: 4px;
+  }
+  .fac-dept {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+
+  /* TRANSITION HINTS */
+  .scroll-hint {
+    position: fixed;
+    bottom: 30px;
+    right: 120px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 3px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 1000;
+    opacity: 1;
+    transition: opacity .3s;
+  }
+  .scroll-hint .keys {
+    display: flex; gap: 4px;
+  }
+  .scroll-hint .key {
+    border: 1px solid var(--steel2);
+    padding: 2px 6px;
+    font-size: 10px;
+    color: var(--text-dim);
+    animation: keyBlink 1.5s ease-in-out infinite alternate;
+  }
+  @keyframes keyBlink {
+    to { border-color: var(--amber); color: var(--amber); }
+  }
+
+  /* NOISE TEXTURE OVERLAY */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    opacity: .04;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 7999;
+  }
+
+  /* ENTER ANIMATION */
+  .floor-content {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity .7s ease .2s, transform .7s ease .2s;
+  }
+  .floor.active .floor-content {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* CORNER DECORATIONS */
+  .corner-tl, .corner-br {
+    position: absolute;
+    width: 30px; height: 30px;
+    pointer-events: none;
+  }
+  .corner-tl {
+    top: 20px; left: 20px;
+    border-top: 2px solid var(--steel2);
+    border-left: 2px solid var(--steel2);
+  }
+  .corner-br {
+    bottom: 20px; right: 20px;
+    border-bottom: 2px solid var(--steel2);
+    border-right: 2px solid var(--steel2);
+  }
+
+  /* EXPLANATION CALLOUTS */
+  .explain {
+    background: rgba(255,179,0,0.05);
+    border-left: 2px solid var(--amber-dim);
+    padding: 12px 16px;
+    margin-top: 14px;
+    font-size: 12.5px;
+    color: #aaa890;
+    line-height: 1.75;
+    font-weight: 300;
+    font-family: var(--body);
+    font-style: italic;
+  }
+  .explain strong { color: var(--cream); font-style: normal; font-weight: 600; }
+  .explain-inline {
+    display: block;
+    font-size: 11.5px;
+    color: #7a7a60;
+    margin-top: 6px;
+    font-style: italic;
+    line-height: 1.7;
+  }
+  .glossary {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .gl-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .gl-term {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--amber);
+    border: 1px solid var(--amber-dim);
+    padding: 2px 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .gl-def { color: var(--text-dim); }
+  .gl-def strong { color: var(--cream); }
+
+  /* RESPONSIVE FIXES */
+  @media (max-height: 850px) {
+    .fi-number { font-size: 56px; }
+    .lobby-title { font-size: clamp(40px, 6vw, 70px); }
+    .section-title { font-size: clamp(30px, 4vw, 50px); }
+    .code-block { max-height: 300px; }
+    .waveform-viz { height: 240px; }
+    .stat-num { font-size: 40px; }
+    .floor { padding: 40px 80px; }
+    .shaft { transform: translateY(-50%) scale(0.8); right: 5vw; }
+  }
+
+  @media (max-width: 1200px) {
+    .floor { padding: 40px 60px; }
+    .abstract-wrap, .arch-wrap, .code-wrap, .results-wrap { gap: 30px; }
+    .shaft { display: none; }
+  }
+
+  @media (max-width: 768px) {
+    .floor { padding: 60px 40px; }
+    .abstract-wrap, .arch-wrap, .code-wrap, .results-wrap {
+      grid-template-columns: 1fr;
+      gap: 40px;
+    }
+    .team-grid { grid-template-columns: 1fr; }
+    .fi-number { font-size: 48px; }
+    #floor-indicator { top: 20px; left: 20px; }
+    #nav-panel { right: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="cursor"></div>
+
+<!-- Floor Indicator -->
+<div id="floor-indicator">
+  <div class="fi-number" id="fi-num">G</div>
+  <div class="fi-name" id="fi-name">LOBBY</div>
+</div>
+
+<!-- Nav Panel -->
+<div id="nav-panel">
+  <button class="nav-btn active" data-floor="0" onclick="goToFloor(0)">
+    <span class="floor-tag">LOBBY</span>
+    <span class="floor-num">G</span>
+  </button>
+  <button class="nav-btn" data-floor="1" onclick="goToFloor(1)">
+    <span class="floor-tag">ABSTRACT</span>
+    <span class="floor-num">1</span>
+  </button>
+  <button class="nav-btn" data-floor="2" onclick="goToFloor(2)">
+    <span class="floor-tag">ARCHITECTURE</span>
+    <span class="floor-num">2</span>
+  </button>
+  <button class="nav-btn" data-floor="3" onclick="goToFloor(3)">
+    <span class="floor-tag">CODE</span>
+    <span class="floor-num">3</span>
+  </button>
+  <button class="nav-btn" data-floor="4" onclick="goToFloor(4)">
+    <span class="floor-tag">RESULTS</span>
+    <span class="floor-num">4</span>
+  </button>
+  <button class="nav-btn" data-floor="5" onclick="goToFloor(5)">
+    <span class="floor-tag">TEAM</span>
+    <span class="floor-num">5</span>
+  </button>
+</div>
+
+<!-- Progress Bar -->
+<div id="progress-bar"></div>
+
+<!-- Scroll Hint -->
+<div class="scroll-hint" id="scroll-hint">
+  <span>NAVIGATE</span>
+  <div class="keys">
+    <span class="key">←</span>
+    <span class="key">→</span>
+  </div>
+</div>
+
+<!-- SCROLL CONTAINER -->
+<div id="scroll-container">
+
+  <!-- FLOOR G: LOBBY -->
+  <section class="floor active" id="floor-0" data-floor-label="G" data-name="LOBBY">
+    <div class="corner-tl"></div>
+    <div class="corner-br"></div>
+    <div class="floor-content">
+      <div class="lobby-tag">VL2025260500897 · VIT SENSE</div>
+      <h1 class="lobby-title">MULTI-FLOOR<br><em>ELEVATOR</em><br>CONTROLLER</h1>
+      <p class="lobby-desc">We built the brain of an elevator   in software   and then proved it works correctly before a single wire is soldered. Navigate the floors to see how.</p>
+      <div class="explain" style="max-width:480px;margin-bottom:32px;">
+        <strong>What is this project?</strong> Think of every elevator you've ever ridden. Something has to decide: which floor do I go to next? Do I go up or down? When do I open the doors? This project is that decision-making logic, built in a hardware description language called <strong>SystemVerilog</strong> and tested using a simulator called <strong>ModelSim</strong>.
+      </div>
+      <button class="lobby-cta" onclick="goToFloor(1)">
+        PRESS TO ASCEND <span class="arrow">→</span>
+      </button>
+      <div class="team-row">
+        <div class="team-badge">24BVD0162 · BORKATAKI</div>
+        <div class="team-badge">24BVD0202 · RAJESH</div>
+        <div class="team-badge">24BVD0216 · SAINI</div>
+      </div>
+    </div>
+
+    <!-- Animated shaft -->
+    <div class="shaft" style="height:320px; position:absolute; right:12vw; top:50%; transform:translateY(-50%);">
+      <div class="shaft-rail left"></div>
+      <div class="shaft-rail right"></div>
+      <div class="shaft-car" style="width:132px; left:24px; right:24px;">
+        <div class="shaft-door-l"></div>
+        <div class="shaft-door-r"></div>
+        <div style="font-family:var(--display);font-size:40px;color:var(--amber);text-shadow:0 0 20px var(--amber);position:relative;z-index:1;">▲</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);position:relative;z-index:1;letter-spacing:3px;">IDLE</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOOR 1: ABSTRACT -->
+  <section class="floor" id="floor-1" data-floor-label="01" data-name="ABSTRACT">
+    <div class="corner-tl"></div>
+    <div class="corner-br"></div>
+    <div class="floor-content abstract-wrap">
+      <div>
+        <div class="section-eyebrow">Abstract</div>
+        <h2 class="section-title">THE<br>BRAIN<br>INSIDE</h2>
+        <p class="section-body">The elevator's logic is modelled as a <strong style="color:var(--cream)">Finite State Machine (FSM)</strong> with three modes: <strong style="color:var(--cream)">IDLE, UP,</strong> and <strong style="color:var(--cream)">DOWN</strong>. It reads which floors are requested, decides which direction to move, climbs or descends one floor at a time, and opens the door when it arrives.</p>
+        <div class="explain">
+          <strong>What's a Finite State Machine?</strong> It's like a flowchart that a machine follows. At any moment, the elevator is in exactly one "state" (Idle, Going Up, or Going Down). When something changes   like a button press   it moves to a new state. Simple rules, predictable behaviour, no surprises.<br><br>
+          <strong>Why SystemVerilog?</strong> It's a language used to describe how hardware chips work   not software running on a computer, but the actual logic circuits inside a chip. The diagram on the right shows the three states and how the elevator transitions between them.
+        </div>
+        <div class="keyword-pills" style="margin-top:16px;">
+          <span class="kpill">FSM</span>
+          <span class="kpill">SYSTEMVERILOG</span>
+          <span class="kpill">MODELSIM</span>
+          <span class="kpill">ABV</span>
+          <span class="kpill">RTL DESIGN</span>
+        </div>
+      </div>
+      <!-- FSM Diagram -->
+      <div class="fsm-diagram">
+        <svg class="fsm-svg" viewBox="0 0 380 340">
+          <!-- Arrows IDLE→UP -->
+          <defs>
+            <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#3A3A2E"/>
+            </marker>
+            <marker id="ah-amber" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="rgba(255,179,0,0.5)"/>
+            </marker>
+          </defs>
+          <!-- IDLE → UP -->
+          <path d="M 190 125 C 130 125 110 90 155 75" stroke="rgba(255,179,0,0.3)" stroke-width="1.5" fill="none" marker-end="url(#ah-amber)"/>
+          <!-- UP → IDLE -->
+          <path d="M 225 75 C 270 90 250 125 190 125" stroke="#3A3A2E" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+          <!-- IDLE → DOWN -->
+          <path d="M 190 215 C 130 215 110 250 155 265" stroke="rgba(255,179,0,0.3)" stroke-width="1.5" fill="none" marker-end="url(#ah-amber)"/>
+          <!-- DOWN → IDLE -->
+          <path d="M 225 265 C 270 250 250 215 190 215" stroke="#3A3A2E" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+          <!-- Labels -->
+          <text x="118" y="96" font-family="'Share Tech Mono'" font-size="9" fill="rgba(255,179,0,0.6)">req_above</text>
+          <text x="240" y="100" font-family="'Share Tech Mono'" font-size="9" fill="#4A4A3A">door_open</text>
+          <text x="118" y="250" font-family="'Share Tech Mono'" font-size="9" fill="rgba(255,179,0,0.6)">req_below</text>
+          <text x="240" y="244" font-family="'Share Tech Mono'" font-size="9" fill="#4A4A3A">door_open</text>
+          <!-- IDLE self-loop -->
+          <path d="M 220 170 C 280 170 280 170 260 170" stroke="#3A3A2E" stroke-width="1.5" fill="none"/>
+          <text x="282" y="174" font-family="'Share Tech Mono'" font-size="8" fill="#4A4A3A">cur req</text>
+        </svg>
+        <div class="fsm-state IDLE">IDLE</div>
+        <div class="fsm-state UP">UP</div>
+        <div class="fsm-state DOWN">DOWN</div>
+    </div>
+  </section>
+
+  <!-- FLOOR 2: ARCHITECTURE -->
+  <section class="floor" id="floor-2" data-floor-label="02" data-name="ARCHITECTURE">
+    <div class="corner-tl"></div>
+    <div class="corner-br"></div>
+    <div class="floor-content arch-wrap">
+      <!-- Block diagram -->
+      <div>
+        <div class="section-eyebrow">Architecture</div>
+        <h2 class="section-title">PORT<br>MAP</h2>
+        <div class="explain" style="margin-bottom:20px;">
+          <strong>What's a "port"?</strong> Ports are the inputs and outputs of a hardware module   like the pins on a chip. Think of them as the doors and windows of the elevator's brain: information flows in (which floor buttons were pressed, the clock tick, the reset signal) and decisions flow out (current floor number, which direction, whether to open the door).
+        </div>
+        <div class="block-diagram" style="margin-top:0;">
+          <div class="bd-block">
+            <div class="bd-label">INPUT   what goes in</div>
+            clk / rst / request[4:0]
+          </div>
+          <div class="bd-connector"></div>
+          <div class="bd-block" style="border-color:var(--amber);width:240px;background:#0d0d08;">
+            <div class="bd-label">CORE MODULE   the logic</div>
+            elevator_controller
+          </div>
+          <div class="bd-connector"></div>
+          <div class="bd-block">
+            <div class="bd-label">OUTPUT   decisions made</div>
+            current_floor / direction / door_open
+          </div>
+          <div style="height:20px;"></div>
+          <div class="bd-block" style="border-style:dashed;color:var(--text-dim);font-size:10px;">
+            <div class="bd-label">TESTBENCH   checks the work</div>
+            project_tb (verification only, not real hardware)
+          </div>
+        </div>
+      </div>
+      <!-- Port Table -->
+      <div>
+        <table class="port-table">
+          <thead>
+            <tr>
+              <th>SIGNAL</th>
+              <th>DIR</th>
+              <th>WIDTH</th>
+              <th>DESCRIPTION</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="port-name">clk</td>
+              <td class="port-dir-in">IN</td>
+              <td>1-bit</td>
+              <td>System clock   the heartbeat. Every tick, the controller takes one step.</td>
+            </tr>
+            <tr>
+              <td class="port-name">rst</td>
+              <td class="port-dir-in">IN</td>
+              <td>1-bit</td>
+              <td>Reset   like a power cycle. Sends the elevator back to floor 0, waiting.</td>
+            </tr>
+            <tr>
+              <td class="port-name">request</td>
+              <td class="port-dir-in">IN</td>
+              <td>5-bit</td>
+              <td>Floor buttons pressed. 5 bits = 5 floors. Bit 3 = "1" means floor 3 was requested.</td>
+            </tr>
+            <tr>
+              <td class="port-name">current_floor</td>
+              <td class="port-dir-out">OUT</td>
+              <td>3-bit</td>
+              <td>Where the elevator is right now (floor 0 to 4).</td>
+            </tr>
+            <tr>
+              <td class="port-name">direction</td>
+              <td class="port-dir-out">OUT</td>
+              <td>1-bit</td>
+              <td>Which way it's moving. 1 = going up, 0 = going down.</td>
+            </tr>
+            <tr>
+              <td class="port-name">door_open</td>
+              <td class="port-dir-out">OUT</td>
+              <td>1-bit</td>
+              <td>Should the doors open? 1 = yes (the elevator has arrived at a requested floor).</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:20px; padding:16px; border:1px solid var(--steel2); background:var(--panel2);">
+          <div style="font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:3px;margin-bottom:8px;">HELPER FUNCTIONS</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);line-height:1.8;">
+            <span style="color:#CC8BFF;">function</span> request_above(req, floor)<br>
+            &nbsp;&nbsp;<span style="color:var(--text-dim)">→ |(req >> (floor+1))</span><br>
+            <span style="color:#CC8BFF;">function</span> request_below(req, floor)<br>
+            &nbsp;&nbsp;<span style="color:var(--text-dim)">→ |(req & ((1 &lt;&lt; floor)-1))</span>
+          </div>
+          <div class="explain" style="margin-top:12px;font-size:11.5px;">
+            These two functions answer simple questions in one line of logic: <strong>"Is anyone waiting above me?"</strong> and <strong>"Is anyone waiting below me?"</strong> They scan the 5-bit request signal using bitwise operations (shifting and masking bits) to check only the relevant floors, without needing a loop or a priority encoder chip.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOOR 3: CODE -->
+  <section class="floor" id="floor-3" data-floor-label="03" data-name="CODE">
+    <div class="corner-tl"></div>
+    <div class="corner-br"></div>
+    <div class="floor-content code-wrap">
+      <div>
+        <div class="section-eyebrow">Implementation</div>
+        <h2 class="section-title" style="margin-bottom:16px;">SV<br>CODE</h2>
+        <div class="explain" style="margin-bottom:16px;">
+          <strong>What are you looking at?</strong> This is the actual SystemVerilog code that defines the elevator's logic. Each keyword has a job: <strong>input/output</strong> declares what the module receives and sends back. <strong>always_ff</strong> means "run this block on every clock tick." The <strong>case(state)</strong> block is the FSM   it checks the current state and decides what to do next.
+        </div>
+        <div class="code-block">
+          <div class="code-tab">elevator_controller.sv</div>
+          <pre><span class="c-keyword">module</span> <span class="c-signal">elevator_controller</span> (
+  <span class="c-keyword">input</span> <span class="c-type">logic</span> clk,
+  <span class="c-keyword">input</span> <span class="c-type">logic</span> rst,
+  <span class="c-keyword">input</span> <span class="c-type">logic</span> [<span class="c-number">4</span>:<span class="c-number">0</span>] request,
+  <span class="c-keyword">output</span> <span class="c-type">logic</span> [<span class="c-number">2</span>:<span class="c-number">0</span>] current_floor,
+  <span class="c-keyword">output</span> <span class="c-type">logic</span> direction,
+  <span class="c-keyword">output</span> <span class="c-type">logic</span> door_open
+);
+
+<span class="c-keyword">typedef</span> <span class="c-keyword">enum</span> <span class="c-type">logic</span> [<span class="c-number">1</span>:<span class="c-number">0</span>]
+  {IDLE, UP, DOWN} state_t;
+state_t state;
+
+<span class="c-keyword">always_ff</span> @(<span class="c-keyword">posedge</span> clk <span class="c-keyword">or</span> <span class="c-keyword">posedge</span> rst)
+<span class="c-keyword">begin</span>
+  <span class="c-keyword">if</span> (rst) <span class="c-keyword">begin</span>
+    current_floor <= <span class="c-number">0</span>;
+    state <= IDLE;
+    door_open <= <span class="c-number">0</span>;
+  <span class="c-keyword">end else begin</span>
+    door_open <= <span class="c-number">0</span>;
+    <span class="c-keyword">case</span> (state)
+      IDLE: <span class="c-keyword">begin</span>
+        <span class="c-keyword">if</span> (request[current_floor])
+          door_open <= <span class="c-number">1</span>;
+        <span class="c-keyword">else if</span> (request_above(...))
+          state <= UP;
+        <span class="c-keyword">else if</span> (request_below(...))
+          state <= DOWN;
+      <span class="c-keyword">end</span>
+      UP: <span class="c-keyword">begin</span>
+        direction <= <span class="c-number">1</span>;
+        current_floor <= current_floor + <span class="c-number">1</span>;
+        <span class="c-keyword">if</span> (request[current_floor+<span class="c-number">1</span>])
+          door_open <= <span class="c-number">1</span>; state <= IDLE;
+      <span class="c-keyword">end</span>
+      DOWN: <span class="c-keyword">begin</span>
+        direction <= <span class="c-number">0</span>;
+        current_floor <= current_floor - <span class="c-number">1</span>;
+        <span class="c-keyword">if</span> (request[current_floor-<span class="c-number">1</span>])
+          door_open <= <span class="c-number">1</span>; state <= IDLE;
+      <span class="c-keyword">end</span>
+    <span class="c-keyword">endcase</span>
+  <span class="c-keyword">end</span>
+<span class="c-keyword">end</span>
+<span class="c-keyword">endmodule</span></pre>
+        </div>
+      </div>
+      <div class="code-info">
+        <div class="info-card">
+          <div class="info-card-title">Assertion-Based Verification</div>
+          <div class="info-card-body">After every clock tick, the testbench automatically checks: <em>"Did the door just open? If so, was this floor actually requested?"</em> If the answer is no, it immediately reports an error. This is called an <strong style="color:var(--cream)">assertion</strong>   a built-in sanity check that runs alongside the simulation. Zero failures here means the door never opened at the wrong floor.</div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-title">What is a Testbench?</div>
+          <div class="info-card-body">A testbench is a separate piece of code written to <em>test</em> the design   like a script that pretends to be a building pushing buttons. It applies different floor requests and watches how the controller responds. It's not real hardware; it exists only in simulation to verify correctness before anything is manufactured.</div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-title">Python Log Parser</div>
+          <div class="info-card-body">After the simulation finishes, ModelSim writes a log file. A small Python script reads that log, looks for the word "error," and prints either ✗ TEST FAILED or ✓ TEST PASSED. It also confirms the simulation actually completed by checking for the <code style="color:var(--amber);font-family:var(--mono);font-size:12px;">$finish</code> signal   like checking an exam paper was actually submitted.</div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-title">Clock   the Heartbeat</div>
+          <div class="info-card-body">The clock signal alternates between 0 and 1 at a fixed rate. Each rising edge (0 to 1 transition) is one "tick"   one moment when the FSM can change state. <span style="font-family:var(--display);font-size:24px;color:var(--amber);">10ps</span> per full cycle   extremely fast, as used in hardware simulation. Real elevators operate over seconds, not picoseconds, but the logic is identical.</div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-title">Tool Stack</div>
+          <div class="info-card-body">SystemVerilog (hardware language) → ModelSim (simulator that runs the design virtually) → Python (to automatically check the results). No physical hardware was needed   the entire elevator was tested inside a computer.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOOR 4: RESULTS -->
+  <section class="floor" id="floor-4" data-floor-label="04" data-name="RESULTS">
+    <div class="corner-tl"></div>
+    <div class="corner-br"></div>
+    <div class="floor-content results-wrap">
+      <div>
+        <div class="section-eyebrow">Simulation Results</div>
+        <h2 class="section-title" style="margin-bottom:12px;">ALL<br>PASS</h2>
+        <div class="explain" style="margin-bottom:16px;">
+          <strong>How was the elevator tested?</strong> Three scenarios were run in the simulator   each one presses different floor buttons and watches what happens. The waveform below is the same kind of signal graph engineers use to debug chips. Each row is one signal; time flows left to right. Click a scenario to see its waveform.
+        </div>
+        <div class="scenario-tabs">
+          <button class="stab active" onclick="selectScenario(0,this)">SCENARIO 1</button>
+          <button class="stab" onclick="selectScenario(1,this)">SCENARIO 2</button>
+          <button class="stab" onclick="selectScenario(2,this)">SCENARIO 3</button>
+        </div>
+        <div class="waveform-viz" id="waveform-container">
+          <div class="wv-label">ModelSim Waveform</div>
+          <div id="scenario-desc" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:16px;letter-spacing:1px;">
+            request=5'b01000 → Floor 3 · FSM: IDLE→UP→IDLE
+          </div>
+          <canvas id="wave-canvas" width="500" height="200"></canvas>
+        </div>
+        <div class="pass-badge">
+          <span class="dot"></span>
+          3/3 SCENARIOS PASSED · 0 ASSERTION ERRORS
+        </div>
+      </div>
+      <div class="results-stats">
+        <div class="explain" style="margin-bottom:8px;">
+          <strong>Reading the waveform:</strong> CLK is the clock ticking. RST starts high (resetting the system) then drops to 0. FLOOR climbs as the elevator moves up   you can see it step from 0 to 3. DOOR pulses green when the elevator arrives and opens. Every green pulse lines up with a requested floor. That's correctness.
+        </div>
+        <div class="stat-row">
+          <div class="stat-num">3</div>
+          <div class="stat-label">
+            <strong>FSM States</strong>
+            IDLE (waiting) · UP (ascending) · DOWN (descending)
+          </div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-num">5</div>
+          <div class="stat-label">
+            <strong>Floors Simulated</strong>
+            Ground (0) through Floor 4   all tested
+          </div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-num">0</div>
+          <div class="stat-label">
+            <strong>Assertion Failures</strong>
+            The door never opened at the wrong floor   ever
+          </div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-num">35%</div>
+          <div class="stat-label">
+            <strong>More bugs caught</strong>
+            Using assertions finds ~35% more bugs than just watching signals (Bergeron, 2012)
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOOR 5: TEAM -->
+  <section class="floor" id="floor-5" data-floor-label="05" data-name="TEAM">
+    <div class="corner-tl"></div>
+    <div class="corner-br"></div>
+    <div class="floor-content" style="width:100%;max-width:960px;">
+      <div class="section-eyebrow">Team & Credits</div>
+      <h2 class="section-title">THE<br>ENGINEERS</h2>
+      <div class="explain" style="max-width:900px;margin-bottom:4px;">
+        This project was built by three undergraduate students at <strong>VIT Vellore</strong> as part of their Scripting Languages and Verification Lab course. The work covered hardware description, simulation, assertion-based verification, and Python scripting   all coming together to prove a virtual elevator works correctly before it ever touches real silicon.
+      </div>
+      <div class="team-grid">
+        <div class="team-card">
+          <div class="tc-reg">24BVD0162</div>
+          <div class="tc-name">Mayur<br>Borkataki</div>
+          <div class="tc-dept">Electronics Engineering</div>
+          <div class="tc-icon">⚡</div>
+        </div>
+        <div class="team-card">
+          <div class="tc-reg">24BVD0202</div>
+          <div class="tc-name">Ronak<br>Rajesh</div>
+          <div class="tc-dept">Electronics Engineering</div>
+          <div class="tc-icon">🔌</div>
+        </div>
+        <div class="team-card">
+          <div class="tc-reg">24BVD0216</div>
+          <div class="tc-name">Hemanya<br>Saini</div>
+          <div class="tc-dept">Electronics Engineering</div>
+          <div class="tc-icon">🛗</div>
+        </div>
+      </div>
+      <div class="faculty-row">
+        <div class="fac-card">
+          <div class="fac-role">Faculty Guide</div>
+          <div class="fac-name">Dr. Abhishek Narayan Tripathi</div>
+          <div class="fac-dept">Dept. of Micro and Nanoelectronics · VIT Vellore</div>
+        </div>
+        <div class="fac-card">
+          <div class="fac-role">Head of Department</div>
+          <div class="fac-name">Dr. Sriadibhatla Sridevi</div>
+          <div class="fac-dept">School of Electronics Engineering (SENSE) · VIT Vellore</div>
+        </div>
+      </div>
+      <div style="margin-top:40px;font-family:var(--mono);font-size:9px;color:var(--text-dim);letter-spacing:3px;border-top:1px solid var(--steel);padding-top:20px;">
+        CLASS VL2025260500897 · TT237A SCRIPTING LANGUAGES & VERIFICATION LAB · VIT VELLORE
+      </div>
+    </div>
+  </section>
+
+</div><!-- /scroll-container -->
+
+<script>
+// ─── STATE ───
+let currentFloor = 0;
+const totalFloors = 6;
+const floorNames = ['LOBBY','ABSTRACT','ARCHITECTURE','CODE','RESULTS','TEAM'];
+const floorLabels = ['G','1','2','3','4','5'];
+let isAnimating = false;
+
+// ─── CURSOR ───
+const cursor = document.getElementById('cursor');
+document.addEventListener('mousemove', e => {
+  cursor.style.left = e.clientX + 'px';
+  cursor.style.top = e.clientY + 'px';
+});
+document.querySelectorAll('button, .lobby-cta, .stab').forEach(el => {
+  el.addEventListener('mouseenter', () => cursor.classList.add('big'));
+  el.addEventListener('mouseleave', () => cursor.classList.remove('big'));
+});
+
+// ─── NAVIGATION ───
+function goToFloor(n) {
+  if (isAnimating || n < 0 || n >= totalFloors) return;
+  isAnimating = true;
+  currentFloor = n;
+
+  // move container
+  const container = document.getElementById('scroll-container');
+  container.style.transform = `translateX(-${n * 100}vw)`;
+
+  // update indicator
+  document.getElementById('fi-num').textContent = floorLabels[n];
+  document.getElementById('fi-name').textContent = floorNames[n];
+
+  // progress bar
+  document.getElementById('progress-bar').style.width = (n / (totalFloors - 1) * 100) + '%';
+
+  // nav buttons
+  document.querySelectorAll('.nav-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', i === n);
+  });
+
+  // activate floor content
+  document.querySelectorAll('.floor').forEach((fl, i) => {
+    fl.classList.toggle('active', i === n);
+  });
+
+  // if results floor, draw waveform
+  if (n === 4) setTimeout(() => drawWave(activeScenario), 400);
+
+  setTimeout(() => { isAnimating = false; }, 900);
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowUp') goToFloor(currentFloor + 1);
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') goToFloor(currentFloor - 1);
+});
+
+// Mouse wheel
+let wheelCooldown = false;
+document.addEventListener('wheel', e => {
+  if (wheelCooldown) return;
+  wheelCooldown = true;
+  if (e.deltaY > 0 || e.deltaX > 0) goToFloor(currentFloor + 1);
+  else goToFloor(currentFloor - 1);
+  setTimeout(() => wheelCooldown = false, 1000);
+});
+
+// Touch swipe
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 50) {
+    if (dx < 0) goToFloor(currentFloor + 1);
+    else goToFloor(currentFloor - 1);
+  }
+});
+
+// ─── WAVEFORM RENDERER ───
+const scenarios = [
+  {
+    desc: "request=5'b01000 → Floor 3 · FSM: IDLE→UP→UP→IDLE",
+    clk:   [0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1],
+    rst:   [1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    req:   ['00000','00000','01000','01000','01000','01000','01000','01000','01000','01000','01000','01000','01000','01000','01000','01000','01000','01000','01000','01000'],
+    floor: [0,0,0,0,0,1,2,3,3,3,3,3,3,3,3,3,3,3,3,3],
+    dir:   [0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
+    door:  [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+  },
+  {
+    desc: "request=5'b10100 → Floors 2&4 · FSM: UP→IDLE→UP→IDLE",
+    clk:   [0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1],
+    rst:   [1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    req:   ['00000','00000','10100','10100','10100','10100','10100','10100','10100','10100','10100','10100','10100','10100','10100','10100','10100','10100','10100','10100'],
+    floor: [0,0,0,0,1,2,2,2,3,4,4,4,4,4,4,4,4,4,4,4],
+    dir:   [0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0],
+    door:  [0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+  },
+  {
+    desc: "request=5'b00001 → Floor 0 · FSM: IDLE opens door immediately",
+    clk:   [0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1],
+    rst:   [1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    req:   ['00000','00000','00001','00001','00001','00001','00001','00001','00001','00001','00001','00001','00001','00001','00001','00001','00001','00001','00001','00001'],
+    floor: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    dir:   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    door:  [0,0,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1],
+  }
+];
+
+let activeScenario = 0;
+
+function selectScenario(idx, btn) {
+  activeScenario = idx;
+  document.querySelectorAll('.stab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('scenario-desc').textContent = scenarios[idx].desc;
+  drawWave(idx);
+}
+
+function drawWave(idx) {
+  const canvas = document.getElementById('wave-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const s = scenarios[idx];
+  const W = canvas.width = canvas.parentElement.clientWidth - 48;
+  const H = canvas.height = 200;
+  ctx.clearRect(0, 0, W, H);
+
+  const rows = [
+    { name: 'CLK', data: s.clk, color: '#888870', type: 'bit', max: 1 },
+    { name: 'RST', data: s.rst, color: '#FF3B30', type: 'bit', max: 1 },
+    { name: 'FLOOR', data: s.floor, color: '#FFB300', type: 'int', max: 4 },
+    { name: 'DIR', data: s.dir, color: '#56D3FF', type: 'bit', max: 1 },
+    { name: 'DOOR', data: s.door, color: '#39FF14', type: 'bit', max: 1 },
+  ];
+
+  const rowH = H / rows.length;
+  const labelW = 52;
+  const trackW = W - labelW - 10;
+  const stepW = trackW / s.clk.length;
+
+  rows.forEach((row, ri) => {
+    const y0 = ri * rowH;
+    const yMid = y0 + rowH / 2;
+    const yHigh = y0 + 4;
+    const yLow = y0 + rowH - 8;
+
+    // Label
+    ctx.fillStyle = row.color;
+    ctx.font = '9px "Share Tech Mono"';
+    ctx.fillText(row.name, 0, yMid + 4);
+
+    // Draw signal
+    ctx.strokeStyle = row.color;
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = row.color;
+    ctx.shadowBlur = row.name === 'DOOR' ? 6 : 0;
+    ctx.beginPath();
+
+    let px = labelW;
+    for (let i = 0; i < row.data.length; i++) {
+      const val = row.data[i];
+      let py;
+      if (row.type === 'bit') {
+        py = val === 1 ? yHigh : yLow;
+      } else {
+        py = yLow - (val / row.max) * (yLow - yHigh);
+      }
+      const nx = labelW + (i + 1) * stepW;
+      const ny_next = i + 1 < row.data.length
+        ? (row.type === 'bit'
+          ? (row.data[i+1] === 1 ? yHigh : yLow)
+          : yLow - (row.data[i+1] / row.max) * (yLow - yHigh))
+        : py;
+
+      if (i === 0) ctx.moveTo(px, py);
+      ctx.lineTo(nx, py);
+      if (ny_next !== py) ctx.lineTo(nx, ny_next);
+      px = nx;
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Divider
+    ctx.strokeStyle = 'rgba(42,42,34,0.6)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, y0 + rowH - 1);
+    ctx.lineTo(W, y0 + rowH - 1);
+    ctx.stroke();
+  });
+}
+
+// Initial floor activation
+document.querySelector('#floor-0').classList.add('active');
+setTimeout(() => drawWave(0), 100);
+
+// Hide scroll hint after first navigation
+document.addEventListener('keydown', () => {
+  document.getElementById('scroll-hint').style.opacity = '0';
+}, { once: true });
+document.addEventListener('wheel', () => {
+  document.getElementById('scroll-hint').style.opacity = '0';
+}, { once: true });
+
+// FSM animated state highlight
+const fsmStates = document.querySelectorAll('.fsm-state');
+let fsmIdx = 0;
+const fsmOrder = [0, 1, 0, 2]; // IDLE, UP, IDLE, DOWN
+setInterval(() => {
+  fsmStates.forEach((s,i) => {
+    const isActive = i === fsmOrder[fsmIdx];
+    s.style.background = isActive ? 'rgba(255,179,0,0.15)' : 'var(--panel2)';
+    s.style.borderColor = isActive ? 'var(--amber)' : 'rgba(255,179,0,0.3)';
+    s.style.boxShadow = isActive ? '0 0 40px rgba(255,179,0,.5)' : '0 0 20px rgba(255,179,0,.1)';
+  });
+  fsmIdx = (fsmIdx + 1) % fsmOrder.length;
+}, 1500);
+</script>
+</body>
+</html>
